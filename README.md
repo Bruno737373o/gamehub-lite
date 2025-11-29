@@ -29,6 +29,8 @@ GameHub Lite is a modified version of GameHub that:
 
 Install the required tools:
 
+Get `adb` either via Android Studio or `platform-tools` package.
+
 ```bash
 # macOS
 brew install apktool openjdk
@@ -36,9 +38,19 @@ brew install apktool openjdk
 # Ubuntu/Debian
 sudo apt install apktool openjdk-17-jdk
 
+# Arch
+sudo pacman -S apktool jdk17-openjdk
+
+# Fedora (dnf):
+sudo dnf install apktool java-17-openjdk
+
 # Windows
+stop using windows
+# JK.
 # Download apktool from https://apktool.org/
-# Install Java JDK 17+
+# Install Java JDK 17+ from Oracle or AdoptOpenJDK
+# Not tested but should work in WSL2
+
 ```
 
 ### Patching
@@ -46,6 +58,7 @@ sudo apt install apktool openjdk-17-jdk
 1. Download GameHub 5.1.0 APK and place it at `apk/GameHub-5.1.0.apk`
 
 2. Run the patcher:
+
    ```bash
    ./patch.sh
    ```
@@ -68,11 +81,11 @@ The patcher uses a multi-step process:
 
 ## Patch Contents
 
-| Category | Count | Description |
-|----------|-------|-------------|
-| Deletions | 3,385 | Telemetry SDKs, tracking code, unused assets |
-| Additions | 2,856 | New resources, modified assets, new features |
-| Modifications | 223 | Smali code patches for behavior changes |
+| Category      | Count | Description                                  |
+| ------------- | ----- | -------------------------------------------- |
+| Deletions     | 3,385 | Telemetry SDKs, tracking code, unused assets |
+| Additions     | 2,856 | New resources, modified assets, new features |
+| Modifications | 223   | Smali code patches for behavior changes      |
 
 ### Removed Components
 
@@ -99,6 +112,7 @@ If you've modified the Lite APK and want to update the patches:
 ```
 
 This will:
+
 1. Decompile both APKs
 2. Generate diff patches for modified files
 3. Copy new files to patches directory
@@ -124,6 +138,7 @@ patches/
 ### Modifying Patches
 
 1. Decompile the Lite APK manually:
+
    ```bash
    apktool d apk/GameHub-Lite.apk -o work/lite
    ```
@@ -131,6 +146,7 @@ patches/
 2. Make your changes to files in `work/lite/`
 
 3. Rebuild and test:
+
    ```bash
    apktool b work/lite -o work/test.apk
    # Sign and install for testing
@@ -146,6 +162,7 @@ patches/
 ### Patch fails to apply
 
 If patches fail due to APK version mismatch:
+
 - Ensure you're using GameHub 5.1.0 exactly
 - Check the MD5 hash matches expected value
 - Try regenerating patches with your APK version
@@ -164,9 +181,9 @@ If patches fail due to APK version mismatch:
 ## Version Compatibility
 
 | GameHub Version | Patcher Version | Status         |
-|-----------------|-----------------|----------------|
-| 5.1.0 | 1.0 | Supported      |
-| 5.3.3 | - | in development |
+| --------------- | --------------- | -------------- |
+| 5.1.0           | 1.0             | Supported      |
+| 5.3.3           | -               | in development |
 
 ## Alternative: ReVanced Patches (WORK IN PROGRESS)
 
@@ -182,10 +199,10 @@ See [revanced/README.md](revanced/README.md) for details.
 
 ### When to Use Which
 
-| Approach | Best For |
-|----------|----------|
+| Approach                      | Best For                                                |
+| ----------------------------- | ------------------------------------------------------- |
 | **Diff-based** (`./patch.sh`) | Full control, complete SDK removal, simpler maintenance |
-| **ReVanced** (`revanced/`) | ReVanced Manager integration, portable JAR patches |
+| **ReVanced** (`revanced/`)    | ReVanced Manager integration, portable JAR patches      |
 
 ## License
 
@@ -198,7 +215,6 @@ This project is for educational and personal privacy purposes only. The patches 
 3. Regenerate patches with `./generate-patches.sh`
 4. Test the full patch cycle with `./patch.sh`
 5. Submit a pull request
-
 
 ## Different versions of GameHub Lite
 
@@ -253,14 +269,14 @@ If you have trouble running a game, please see if anyone shared a solution on [E
 
 For support, discussion and development updates join the [EmuReady Discord server](https://discord.gg/CYhCzApXav).
 
---- 
+---
 
 ## Related Projects
 
-| Repository | Description                                                                                                                                                      |
-|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [gamehub-lite](https://github.com/Producdevity/gamehub-lite) | Main project with pre-built APK releases and patch files                                                                                                         |
-| [gamehub-lite-api](https://github.com/Producdevity/gamehub-lite-api) | Static JSON API hosting component manifests, configuration files, and mock responses that replace the original Chinese servers                                   |
-| [gamehub-lite-worker](https://github.com/Producdevity/gamehub-lite-worker) | Cloudflare Worker API proxy that handles token management, signature regeneration, privacy protection (IP hiding, fingerprint sanitization), and content routing |
-| [gamehub-lite-news](https://github.com/Producdevity/gamehub-lite-news) | News aggregator that collects gaming news from RSS feeds and GitHub releases, transforms them into GameHub's API format                                          |
+| Repository                                                                               | Description                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [gamehub-lite](https://github.com/Producdevity/gamehub-lite)                             | Main project with pre-built APK releases and patch files                                                                                                         |
+| [gamehub-lite-api](https://github.com/Producdevity/gamehub-lite-api)                     | Static JSON API hosting component manifests, configuration files, and mock responses that replace the original Chinese servers                                   |
+| [gamehub-lite-worker](https://github.com/Producdevity/gamehub-lite-worker)               | Cloudflare Worker API proxy that handles token management, signature regeneration, privacy protection (IP hiding, fingerprint sanitization), and content routing |
+| [gamehub-lite-news](https://github.com/Producdevity/gamehub-lite-news)                   | News aggregator that collects gaming news from RSS feeds and GitHub releases, transforms them into GameHub's API format                                          |
 | [gamehub-lite-token-refresh](https://github.com/Producdevity/gamehub-lite-token-refresh) | Automated token refresher that uses Mail.tm OTP authentication to maintain valid GameHub tokens, runs every 4 hours via Cloudflare Cron                          |
