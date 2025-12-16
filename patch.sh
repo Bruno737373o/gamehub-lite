@@ -47,19 +47,19 @@ check_dependencies() {
 
     local missing=()
 
-    if ! command -v apktool &> /dev/null; then
+    if ! command -v apktool &>/dev/null; then
         missing+=("apktool")
     fi
 
-    if ! command -v java &> /dev/null; then
+    if ! command -v java &>/dev/null; then
         missing+=("java")
     fi
 
-    if ! command -v zipalign &> /dev/null && ! command -v "$ANDROID_HOME/build-tools/"*/zipalign &> /dev/null; then
+    if ! command -v zipalign &>/dev/null && ! command -v "$ANDROID_HOME/build-tools/"*/zipalign &>/dev/null; then
         print_warning "zipalign not found - APK may not be optimized"
     fi
 
-    if ! command -v apksigner &> /dev/null && ! command -v jarsigner &> /dev/null; then
+    if ! command -v apksigner &>/dev/null && ! command -v jarsigner &>/dev/null; then
         missing+=("apksigner or jarsigner")
     fi
 
@@ -88,17 +88,28 @@ verify_source_apk() {
 
     # Calculate MD5 of source APK
     local md5
-    if command -v md5sum &> /dev/null; then
+    if command -v md5sum &>/dev/null; then
         md5=$(md5sum "$SOURCE_APK" | awk '{print $1}')
     else
         md5=$(md5 -q "$SOURCE_APK")
     fi
 
     # Expected MD5 for GameHub 5.1.0
-    local expected_md5="f7c2e5a1b3d4e6f8a9b0c1d2e3f4a5b6"  # Replace with actual MD5
+    local expected_md5="42db81116bf3c74e52e6f6afb4ec9f91" # Replace with actual MD5 if you are intentionally using a different APK
 
     print_success "Source APK found: $(basename "$SOURCE_APK")"
     echo "         MD5: $md5"
+    if [ "$md5" != "$expected_md5" ]; then
+        print_warning "MD5 checksum does not match expected value."
+        print_warning "Proceeding may lead to unexpected results."
+        read -pr "Do you want to continue? (y/N): " choice
+        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
+            print_error "Aborting."
+            exit 1
+        fi
+    else
+        print_success "MD5 checksum verified."
+    fi
 }
 
 setup_keystore() {
@@ -135,7 +146,7 @@ apply_deletions() {
     print_step "Removing telemetry and unnecessary files..."
 
     local count=0
-    local total=$(wc -l < "$PATCHES_DIR/files_to_delete.txt")
+    local total=$(wc -l <"$PATCHES_DIR/files_to_delete.txt")
 
     while IFS= read -r file; do
         target="$WORK_DIR/decompiled/$file"
@@ -143,7 +154,7 @@ apply_deletions() {
             rm -rf "$target"
             ((count++))
         fi
-    done < "$PATCHES_DIR/files_to_delete.txt"
+    done <"$PATCHES_DIR/files_to_delete.txt"
 
     print_success "Removed $count of $total files/directories"
 }
@@ -164,14 +175,14 @@ apply_patches() {
         fi
 
         if [ -f "$patch_file" ] && [ -f "$target" ]; then
-            if patch -s -N "$target" < "$patch_file" 2>/dev/null; then
+            if patch -s -N "$target" <"$patch_file" 2>/dev/null; then
                 ((count++))
             else
                 ((failed++))
                 print_warning "Failed to patch: $file"
             fi
         fi
-    done < "$PATCHES_DIR/files_to_patch.txt"
+    done <"$PATCHES_DIR/files_to_patch.txt"
 
     if [ $failed -gt 0 ]; then
         print_warning "Applied $count patches, $failed failed"
@@ -227,7 +238,7 @@ align_apk() {
 
     local zipalign_cmd=""
 
-    if command -v zipalign &> /dev/null; then
+    if command -v zipalign &>/dev/null; then
         zipalign_cmd="zipalign"
     elif [ -n "$ANDROID_HOME" ]; then
         zipalign_cmd=$(find "$ANDROID_HOME/build-tools" -name "zipalign" | head -1)
@@ -245,7 +256,7 @@ align_apk() {
 sign_apk() {
     print_step "Signing APK..."
 
-    if command -v apksigner &> /dev/null; then
+    if command -v apksigner &>/dev/null; then
         apksigner sign --ks "$KEYSTORE" \
             --ks-pass "pass:$KEYSTORE_PASS" \
             --ks-key-alias "$KEY_ALIAS" \
