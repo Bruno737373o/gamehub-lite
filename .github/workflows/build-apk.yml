@@ -21,20 +21,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zipalign apksigner
-          # Instalando o Apktool manualmente para garantir a versão mais recente
           sudo wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
           sudo wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          apktool --version
 
-      - name: Baixar APK Original (113MB)
-        # O wget com -c permite continuar o download se houver instabilidade
+      - name: Baixar APK via MediaFire (Contorno de Bot)
         run: |
           mkdir -p apk
-          wget -c --tries=10 "https://github.com/Producdevity/gamehub-lite/releases/download/v1.0.0/GameHub-5.1.0.apk" -O apk/GameHub-5.1.0.apk
+          # Este comando tenta extrair o link real de download que o MediaFire esconde
+          # Se o link abaixo falhar, a melhor opção é subir o arquivo via Git LFS ou GitHub Desktop
+          DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
+          echo "Baixando de: $DOWNLOAD_URL"
+          wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
       - name: Executar Patch do GameHub
-        # Aumentamos a memória do Java para lidar com o APK grande
         run: |
           chmod +x patch.sh
           export _JAVA_OPTIONS="-Xmx2g"
@@ -43,12 +43,10 @@ jobs:
       - name: Assinar APK Final
         run: |
           mkdir -p bin
-          # Gera uma chave temporária para que o APK seja instalável
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          # Assina o APK que o script patch.sh gerou na pasta output/
           apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out bin/GameHub-Lite-Signed.apk output/*.apk
 
-      - name: Disponibilizar APK para Download
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Result
