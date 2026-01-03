@@ -1,51 +1,57 @@
-name: Build GameHub Lite APK
+name: Compilar GameHub Lite
 
 on:
-  workflow_dispatch: # Permite rodar manualmente
+  workflow_dispatch: # Permite que você clique em um botão para iniciar
 
 jobs:
-  build:
+  patch-job:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout Code
+      - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install Dependencies
+      - name: Instalar Apktool e Dependências
         run: |
           sudo apt-get update
           sudo apt-get install -y zipalign
-          wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
+          # Baixa o script wrapper do apktool
+          sudo wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
+          # Baixa o jar do apktool
+          sudo wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
+          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
+          apktool --version
 
-      - name: Download Original APK
+      - name: Baixar APK Original (v5.1.0)
         run: |
           mkdir -p apk
-          # Link direto para a versão 5.1.0 (Exemplo: ajuste se houver link oficial)
-          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" -o apk/GameHub-5.1.0.apk
-
-      - name: Run Patch Script
+          # Substitua o link abaixo pelo link direto do APK original se necessário
+          # Estou usando um placeholder, você precisa garantir que o arquivo esteja lá
+          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file -o apk/GameHub-5.1.0.apk
+          
+      - name: Rodar o Patch
         run: |
           chmod +x patch.sh
           ./patch.sh
 
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: output/
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+      - name: Assinar APK (Debug Key)
+        # Se você não tem uma chave própria, isso gera uma temporária para teste
+        run: |
+          sudo apt-get install -y apksigner
+          # Gera uma chave de teste rápida
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          # Assina o APK gerado na pasta output
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out GameHub-Lite-Signed.apk output/*.apk
 
-      - name: Upload Result
+      - name: Upload do APK Final
         uses: actions/upload-artifact@v4
         with:
-          name: GameHub-Lite-Signed
-          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          name: GameHub-Lite-Android
+          path: GameHub-Lite-Signed.apk
           
