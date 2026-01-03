@@ -33,7 +33,7 @@ jobs:
           mkdir -p apk
           # Substitua o link abaixo pelo link direto do APK original se necessário
           # Estou usando um placeholder, você precisa garantir que o arquivo esteja lá
-          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file -o apk/GameHub-5.1.0.apk
+          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file?dkey=7b90ij9sov7&r=1968 -o apk/GameHub-5.1.0.apk
           
       - name: Rodar o Patch
         run: |
