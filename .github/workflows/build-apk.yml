@@ -1,10 +1,10 @@
 name: Compilar GameHub Lite
 
 on:
-  workflow_dispatch: # Permite que você clique em um botão para iniciar
+  workflow_dispatch: 
 
 jobs:
-  patch-job:
+  patch-process:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,41 +17,40 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Instalar Apktool e Dependências
+      - name: Instalar Ferramentas de Patch
         run: |
           sudo apt-get update
-          sudo apt-get install -y zipalign
-          # Baixa o script wrapper do apktool
+          sudo apt-get install -y zipalign apksigner
+          # Instalando o Apktool manualmente para garantir a versão mais recente
           sudo wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
-          # Baixa o jar do apktool
           sudo wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
           apktool --version
 
-      - name: Baixar APK Original (v5.1.0)
+      - name: Baixar APK Original (113MB)
+        # O wget com -c permite continuar o download se houver instabilidade
         run: |
           mkdir -p apk
-          # Substitua o link abaixo pelo link direto do APK original se necessário
-          # Estou usando um placeholder, você precisa garantir que o arquivo esteja lá
-          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file?dkey=7b90ij9sov7&r=1968 -o apk/GameHub-5.1.0.apk
-          
-      - name: Rodar o Patch
+          wget -c --tries=10 "https://github.com/Producdevity/gamehub-lite/releases/download/v1.0.0/GameHub-5.1.0.apk" -O apk/GameHub-5.1.0.apk
+
+      - name: Executar Patch do GameHub
+        # Aumentamos a memória do Java para lidar com o APK grande
         run: |
           chmod +x patch.sh
+          export _JAVA_OPTIONS="-Xmx2g"
           ./patch.sh
 
-      - name: Assinar APK (Debug Key)
-        # Se você não tem uma chave própria, isso gera uma temporária para teste
+      - name: Assinar APK Final
         run: |
-          sudo apt-get install -y apksigner
-          # Gera uma chave de teste rápida
+          mkdir -p bin
+          # Gera uma chave temporária para que o APK seja instalável
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          # Assina o APK gerado na pasta output
-          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out GameHub-Lite-Signed.apk output/*.apk
+          # Assina o APK que o script patch.sh gerou na pasta output/
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out bin/GameHub-Lite-Signed.apk output/*.apk
 
-      - name: Upload do APK Final
+      - name: Disponibilizar APK para Download
         uses: actions/upload-artifact@v4
         with:
-          name: GameHub-Lite-Android
-          path: GameHub-Lite-Signed.apk
+          name: GameHub-Lite-Result
+          path: bin/GameHub-Lite-Signed.apk
           
