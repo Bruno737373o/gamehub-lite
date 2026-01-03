@@ -1,0 +1,51 @@
+name: Build GameHub Lite APK
+
+on:
+  workflow_dispatch: # Permite rodar manualmente
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zipalign
+          wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
+
+      - name: Download Original APK
+        run: |
+          mkdir -p apk
+          # Link direto para a versão 5.1.0 (Exemplo: ajuste se houver link oficial)
+          curl -L "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" -o apk/GameHub-5.1.0.apk
+
+      - name: Run Patch Script
+        run: |
+          chmod +x patch.sh
+          ./patch.sh
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: output/
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameHub-Lite-Signed
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          
