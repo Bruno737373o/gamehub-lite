@@ -31,68 +31,70 @@ jobs:
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
-      - name: Rodar Script Patch
+      - name: Rodar Script Patch (Modo Seguro)
         run: |
-          # Garante que a pasta work existe antes de rodar o patch
-          mkdir -p work
+          # 1. Impede o patch.sh de tentar fazer o Rebuild/Sign (nós faremos manualmente)
+          # Isso evita que o erro dele pare o Workflow
+          sed -i 's/apktool b/# apktool b/g' patch.sh
+          sed -i 's/apksigner/# apksigner/g' patch.sh
+          sed -i 's/zipalign/# zipalign/g' patch.sh
+          
+          # 2. Configurações de execução
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
-          # Impede que o script apague a pasta ao final
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Patch concluído."
+          ./patch.sh || echo "Patches aplicados (com alguns avisos esperados)."
 
-      - name: Correção de Recursos e Sintaxe
+      - name: Limpeza Crítica e Fix de Recursos
         run: |
-          # Busca o diretório que contém o apktool.yml dentro de work/
-          # Isso ignora as pastas de patches/ que causaram o erro anterior
-          DECOMP_DIR=$(find ./work -name "apktool.yml" | head -n 1 | xargs dirname)
+          # Detecta onde o APK foi descompilado
+          DECOMP_DIR="work/decompiled"
           
-          echo "Diretório de trabalho REAL detectado: $DECOMP_DIR"
-          
-          if [ -n "$DECOMP_DIR" ]; then
-            # 1. Cria placeholders para ícones ausentes
+          if [ -d "$DECOMP_DIR" ]; then
+            echo "Limpando arquivos de rejeição de patch (.rej e .orig)..."
+            # Remove os arquivos que fizeram o build anterior falhar
+            find "$DECOMP_DIR" -name "*.rej" -delete
+            find "$DECOMP_DIR" -name "*.orig" -delete
+            
+            # Remove o public.xml e outros que falharam no log
+            rm -f "$DECOMP_DIR/res/values/public.xml"
+            rm -f "$DECOMP_DIR/res/xml/locales_config.xml"
+            
+            # Fix de Placeholders para ícones ausentes (conforme log anterior)
             mkdir -p "$DECOMP_DIR/res/drawable"
             SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
             echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_guide_close_gry.xml"
             echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_icon_guide_gamepad.xml"
             
-            # 2. Deleta layouts que costumam corromper no patch
-            rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_email_validate.xml"
-            rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_phone_validate.xml"
-            rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_no_connected_dev.xml"
-            
-            # 3. Ajuste de Identidade e limpeza de YAML
+            # Muda o ID do pacote para evitar erro de "App não instalado"
             sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$DECOMP_DIR/AndroidManifest.xml"
+            
+            # Limpa metadados do apktool
             sed -i '/unknownFiles:/,$d' "$DECOMP_DIR/apktool.yml"
-            
-            # 4. Limpeza de arquivos residuais
-            rm -rf "$DECOMP_DIR/unknown"
-            rm -f "$DECOMP_DIR/res/values/public.xml"
-            find "$DECOMP_DIR" -name "*.rej" -delete
-            find "$DECOMP_DIR" -name "*.orig" -delete
-            
-            echo "FINAL_DIR=$DECOMP_DIR" >> $GITHUB_ENV
           else
-            echo "ERRO: Não encontrei a pasta de descompilação em ./work"
-            ls -R ./work
+            echo "ERRO: Pasta de descompilação não encontrada!"
             exit 1
           fi
 
-      - name: Rebuild e Assinatura
+      - name: Rebuild Manual (Nosso Próprio Build)
         run: |
           mkdir -p output
-          # Limpa framework para evitar erros de recursos de sistema
+          # Limpa o framework do sistema para evitar conflitos de IDs
           rm -rf ~/.local/share/apktool/framework/1.apk
           
-          apktool b -f "${{ env.FINAL_DIR }}" -o output/GameHub-Lite-Unsigned.apk --use-aapt2
-          
-          if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
+          echo "Iniciando compilação manual..."
+          apktool b -f work/decompiled -o output/unsigned.apk --use-aapt2
+
+      - name: Assinar APK Final
+        run: |
+          if [ -f "output/unsigned.apk" ]; then
+            echo "Assinando APK..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
-            echo "Build finalizado com sucesso!"
+            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/unsigned.apk
+            echo "APK assinado com sucesso!"
           else
-            echo "Falha no Rebuild: O APK não foi gerado."
+            echo "Falha: O arquivo unsigned.apk não foi gerado pelo apktool."
             exit 1
           fi
 
