@@ -33,61 +33,58 @@ jobs:
 
       - name: Rodar Script Patch
         run: |
-          # Neutraliza paradas do script e impede remoção da pasta de trabalho
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          export _JAVA_OPTIONS="-Xmx4g"
           ./patch.sh || echo "Patch finalizado com avisos de sintaxe."
 
-      - name: Limpeza de Layouts Corrompidos e IDs
+      - name: Limpeza Automática de XMLs Corrompidos
         run: |
-          echo "Removendo arquivos que falharam na compilação XML..."
-          # Deleta os arquivos que apresentaram 'invalid token' ou 'mismatched tag'
-          rm -f work/decompiled/res/layout-sw600dp/llauncher_activity_guide_no_connected_dev.xml
-          rm -f work/decompiled/res/layout/activity_device_functions.xml
-          rm -f work/decompiled/res/layout/activity_pc_game_setting.xml
-          rm -f work/decompiled/res/layout/activity_win_emu_setting.xml
-          rm -f work/decompiled/res/layout/controls_editor_activity.xml
-          rm -f work/decompiled/res/layout/game_activity_game_library_main.xml
-          rm -f work/decompiled/res/layout/llauncher_activity_feedback.xml
-          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_acatar.xml
-          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_info.xml
-          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_name.xml
+          echo "Limpando ficheiros XML com erros de sintaxe e conflitos de patch..."
           
-          # Limpeza de referências quebradas e metadados
+          # 1. Elimina ficheiros que contêm marcas de conflito do patch que causam o erro 'invalid token'
+          grep -lR "<<<<<<<" work/decompiled/res/layout/ | xargs rm -f || echo "Sem conflitos de texto encontrados."
+
+          # 2. Elimina especificamente os ficheiros reportados no último log de erro
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_email_validate.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_email_validate_new.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_input_verification_code.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_no_connected_dev.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_phone_validate.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_hightlights_naming.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_hightlights_preview.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_mobile_game_v4.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_my_feedback.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_user_info.xml
+          
+          # 3. Limpeza de sobras e ajustes de identidade
+          find work/decompiled/res/ -name "*.rej" -delete
+          find work/decompiled/res/ -name "*.orig" -delete
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
           rm -rf work/decompiled/unknown
           rm -f work/decompiled/res/values/public.xml
           rm -rf ~/.local/share/apktool/framework/1.apk
-          find work/decompiled -name "*.rej" -delete
-          find work/decompiled -name "*.orig" -delete
 
-          # Remove linhas que chamam ícones deletados para evitar 'resource not found'
-          grep -lR "llanuncher_" work/decompiled/res/ | xargs sed -i '/llanuncher_/d' || echo "Nenhuma referência restante."
-
-      - name: Rebuild Final (Força Bruta)
+      - name: Rebuild Final
         run: |
           mkdir -p output
-          echo "Iniciando rebuild..."
-          # Tenta com aapt2 para maior compatibilidade com recursos modernos
+          # Força o rebuild ignorando avisos não fatais
           apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
       - name: Assinar APK
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            echo "Gerando chave e assinando..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
-            echo "Sucesso!"
+            echo "APK Gerado com sucesso!"
           else
-            echo "Erro crítico: O rebuild ainda falhou. Verifique os logs de Building Resources."
+            echo "Erro: O ficheiro unsigned.apk não foi criado."
             exit 1
           fi
 
-      - name: Upload do APK
+      - name: Upload do Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
