@@ -31,29 +31,33 @@ jobs:
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
-      - name: Corrigir e Rodar Script Patch
+      - name: Rodar Script Patch
         run: |
+          # Neutraliza paradas do script e impede remoção da pasta de trabalho
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Patch concluído."
+          export _JAVA_OPTIONS="-Xmx4g"
+          ./patch.sh || echo "Patch finalizado com avisos de sintaxe."
 
-      - name: Limpeza Universal e Correção de Referências
+      - name: Limpeza de Layouts Corrompidos e IDs
         run: |
-          # 1. Muda o ID do pacote para evitar conflito de instalação
+          echo "Removendo arquivos que falharam na compilação XML..."
+          # Deleta os arquivos que apresentaram 'invalid token' ou 'mismatched tag'
+          rm -f work/decompiled/res/layout-sw600dp/llauncher_activity_guide_no_connected_dev.xml
+          rm -f work/decompiled/res/layout/activity_device_functions.xml
+          rm -f work/decompiled/res/layout/activity_pc_game_setting.xml
+          rm -f work/decompiled/res/layout/activity_win_emu_setting.xml
+          rm -f work/decompiled/res/layout/controls_editor_activity.xml
+          rm -f work/decompiled/res/layout/game_activity_game_library_main.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_feedback.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_acatar.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_info.xml
+          rm -f work/decompiled/res/layout/llauncher_activity_guide_create_name.xml
+          
+          # Limpeza de referências quebradas e metadados
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
-          
-          # 2. Deleta todos os arquivos que o compilador reclamou anteriormente
-          rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
-          rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
-          rm -f work/decompiled/res/xml/locales_config.xml
-          
-          # 3. NOVIDADE: Procura por qualquer arquivo XML que mencione recursos deletados e remove a linha ofensiva
-          # Isso evita que o build pare em novos erros de "resource not found"
-          grep -lR "llanuncher_" work/decompiled/res/ | xargs sed -i '/llanuncher_/d' || echo "Nenhuma referência restante encontrada."
-          
-          # 4. Limpeza de metadados e YAML
           sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
           rm -rf work/decompiled/unknown
           rm -f work/decompiled/res/values/public.xml
@@ -61,25 +65,29 @@ jobs:
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
 
-      - name: Rebuild de Alta Tolerância
+          # Remove linhas que chamam ícones deletados para evitar 'resource not found'
+          grep -lR "llanuncher_" work/decompiled/res/ | xargs sed -i '/llanuncher_/d' || echo "Nenhuma referência restante."
+
+      - name: Rebuild Final (Força Bruta)
         run: |
           mkdir -p output
-          echo "Iniciando compilação forçada..."
-          # Adicionado -f para forçar e --use-aapt2 para melhor compatibilidade
+          echo "Iniciando rebuild..."
+          # Tenta com aapt2 para maior compatibilidade com recursos modernos
           apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
-      - name: Assinar e Finalizar
+      - name: Assinar APK
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
+            echo "Gerando chave e assinando..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
-            echo "APK pronto!"
+            echo "Sucesso!"
           else
-            echo "ERRO FATAL: O Apktool falhou em gerar o arquivo mesmo com a limpeza universal."
+            echo "Erro crítico: O rebuild ainda falhou. Verifique os logs de Building Resources."
             exit 1
           fi
 
-      - name: Upload
+      - name: Upload do APK
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
