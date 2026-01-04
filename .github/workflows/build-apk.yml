@@ -33,68 +33,65 @@ jobs:
 
       - name: Rodar Script Patch (Modo Seguro)
         run: |
-          # 1. Impede o patch.sh de tentar fazer o Rebuild/Sign (nós faremos manualmente)
-          # Isso evita que o erro dele pare o Workflow
+          # Desativa comandos de rebuild do script original para evitar erro prematuro
           sed -i 's/apktool b/# apktool b/g' patch.sh
           sed -i 's/apksigner/# apksigner/g' patch.sh
           sed -i 's/zipalign/# zipalign/g' patch.sh
-          
-          # 2. Configurações de execução
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
+          # Impedir que o script apague tudo no final
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
-          chmod +x patch.sh
-          ./patch.sh || echo "Patches aplicados (com alguns avisos esperados)."
-
-      - name: Limpeza Crítica e Fix de Recursos
-        run: |
-          # Detecta onde o APK foi descompilado
-          DECOMP_DIR="work/decompiled"
           
-          if [ -d "$DECOMP_DIR" ]; then
-            echo "Limpando arquivos de rejeição de patch (.rej e .orig)..."
-            # Remove os arquivos que fizeram o build anterior falhar
-            find "$DECOMP_DIR" -name "*.rej" -delete
-            find "$DECOMP_DIR" -name "*.orig" -delete
-            
-            # Remove o public.xml e outros que falharam no log
-            rm -f "$DECOMP_DIR/res/values/public.xml"
-            rm -f "$DECOMP_DIR/res/xml/locales_config.xml"
-            
-            # Fix de Placeholders para ícones ausentes (conforme log anterior)
-            mkdir -p "$DECOMP_DIR/res/drawable"
-            SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
-            echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_guide_close_gry.xml"
-            echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_icon_guide_gamepad.xml"
-            
-            # Muda o ID do pacote para evitar erro de "App não instalado"
-            sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$DECOMP_DIR/AndroidManifest.xml"
-            
-            # Limpa metadados do apktool
-            sed -i '/unknownFiles:/,$d' "$DECOMP_DIR/apktool.yml"
-          else
-            echo "ERRO: Pasta de descompilação não encontrada!"
+          chmod +x patch.sh
+          ./patch.sh || echo "Patches finalizados."
+
+      - name: Localização Dinâmica e Limpeza Crítica
+        run: |
+          # Procura onde o AndroidManifest.xml foi parar (ignorando pastas de backup)
+          REAL_PATH=$(find . -name "AndroidManifest.xml" -not -path "*/original/*" -not -path "*/patches/*" | head -n 1 | xargs dirname)
+          
+          if [ -z "$REAL_PATH" ]; then
+            echo "ERRO: Não encontrei a pasta descompilada. Listando diretórios para depuração:"
+            ls -R
             exit 1
           fi
+          
+          echo "Pasta detectada: $REAL_PATH"
+          # Salva o caminho para os próximos passos
+          echo "TARGET_DIR=$REAL_PATH" >> $GITHUB_ENV
 
-      - name: Rebuild Manual (Nosso Próprio Build)
+          # Limpeza de arquivos que travam o compilador (conforme seu log de erro)
+          find "$REAL_PATH" -name "*.rej" -delete
+          find "$REAL_PATH" -name "*.orig" -delete
+          rm -f "$REAL_PATH/res/values/public.xml"
+          rm -f "$REAL_PATH/res/xml/locales_config.xml"
+          
+          # Correção de Placeholders para recursos ausentes
+          mkdir -p "$REAL_PATH/res/drawable"
+          SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
+          echo "$SHAPE" > "$REAL_PATH/res/drawable/llanuncher_guide_close_gry.xml"
+          echo "$SHAPE" > "$REAL_PATH/res/drawable/llanuncher_icon_guide_gamepad.xml"
+          
+          # Ajuste de Identidade
+          sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$REAL_PATH/AndroidManifest.xml"
+          # Limpeza do YAML do Apktool
+          sed -i '/unknownFiles:/,$d' "$REAL_PATH/apktool.yml"
+
+      - name: Rebuild Manual Final
         run: |
           mkdir -p output
-          # Limpa o framework do sistema para evitar conflitos de IDs
           rm -rf ~/.local/share/apktool/framework/1.apk
-          
-          echo "Iniciando compilação manual..."
-          apktool b -f work/decompiled -o output/unsigned.apk --use-aapt2
+          # Usa a variável TARGET_DIR detectada no passo anterior
+          apktool b -f "${{ env.TARGET_DIR }}" -o output/unsigned.apk --use-aapt2
 
-      - name: Assinar APK Final
+      - name: Assinar e Concluir
         run: |
           if [ -f "output/unsigned.apk" ]; then
-            echo "Assinando APK..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/unsigned.apk
-            echo "APK assinado com sucesso!"
+            echo "APK Gerado com sucesso!"
           else
-            echo "Falha: O arquivo unsigned.apk não foi gerado pelo apktool."
+            echo "Erro: O Rebuild falhou."
             exit 1
           fi
 
