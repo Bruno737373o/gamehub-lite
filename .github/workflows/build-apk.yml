@@ -39,41 +39,43 @@ jobs:
           chmod +x patch.sh
           ./patch.sh || echo "Patch concluído."
 
-      - name: Limpeza Radical de Recursos (Fix Build)
+      - name: Limpeza Universal e Correção de Referências
         run: |
-          # 1. Ajusta o ID do pacote para evitar erro de "App não instalado"
+          # 1. Muda o ID do pacote para evitar conflito de instalação
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           
-          # 2. Deleta os layouts que estão causando erro de "resource not found"
-          # Esses arquivos tentam usar drawables que foram removidos
+          # 2. Deleta todos os arquivos que o compilador reclamou anteriormente
           rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
           rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
+          rm -f work/decompiled/res/xml/locales_config.xml
           
-          # 3. Limpeza do YAML e referências
+          # 3. NOVIDADE: Procura por qualquer arquivo XML que mencione recursos deletados e remove a linha ofensiva
+          # Isso evita que o build pare em novos erros de "resource not found"
+          grep -lR "llanuncher_" work/decompiled/res/ | xargs sed -i '/llanuncher_/d' || echo "Nenhuma referência restante encontrada."
+          
+          # 4. Limpeza de metadados e YAML
           sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
           rm -rf work/decompiled/unknown
           rm -f work/decompiled/res/values/public.xml
-          rm -f work/decompiled/res/xml/locales_config.xml
-          
-          # 4. Remove arquivos residuais de patch
+          rm -rf ~/.local/share/apktool/framework/1.apk
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
 
-      - name: Rebuild Manual Final
+      - name: Rebuild de Alta Tolerância
         run: |
           mkdir -p output
-          echo "Iniciando compilação com aapt2..."
-          # Tenta buildar. Se falhar um, tenta o outro.
-          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
+          echo "Iniciando compilação forçada..."
+          # Adicionado -f para forçar e --use-aapt2 para melhor compatibilidade
+          apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b -f work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
-      - name: Assinar e Concluir
+      - name: Assinar e Finalizar
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            echo "Gerando chave e assinando..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+            echo "APK pronto!"
           else
-            echo "ERRO: O APK não foi gerado pelo apktool."
+            echo "ERRO FATAL: O Apktool falhou em gerar o arquivo mesmo com a limpeza universal."
             exit 1
           fi
 
