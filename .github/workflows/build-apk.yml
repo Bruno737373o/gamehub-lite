@@ -47,15 +47,20 @@ jobs:
       - name: Limpeza Extrema e Rebuild Final
         if: always()
         run: |
-          echo "Limpando arquivos problemáticos..."
+          echo "Limpando arquivos problemáticos e corrigindo apktool.yml..."
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
           rm -f work/decompiled/res/values/public.xml
           
-          # Resolve o erro de 'DebugProbesKt.bin' e outros arquivos unknown
+          # 1. Remove a pasta unknown fisicamente
           rm -rf work/decompiled/unknown
           
-          # Recria os mocks de imagem se necessário
+          # 2. LIMPEZA DO YAML: Remove a seção 'unknownFiles' do apktool.yml para evitar o erro FileNotFound
+          # Isso remove desde a linha 'unknownFiles:' até o final da lista de arquivos
+          sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
+          echo "doNotCheck: true" >> work/decompiled/apktool.yml
+          
+          # 3. Mocks de recursos para evitar erros de layout
           mkdir -p work/decompiled/res/drawable
           echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>' > work/decompiled/res/drawable/llanuncher_guide_close_gry.xml
           cp work/decompiled/res/drawable/llanuncher_guide_close_gry.xml work/decompiled/res/drawable/llanuncher_icon_guide_gamepad.xml
@@ -63,7 +68,7 @@ jobs:
           mkdir -p output
           echo "Iniciando Rebuild..."
           
-          # O segredo: usamos -nc (no-crunch) e ignoramos erros de unknown files
+          # Rebuild ignorando erros de recursos e usando aapt2
           apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
           
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
