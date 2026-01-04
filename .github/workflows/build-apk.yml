@@ -33,56 +33,55 @@ jobs:
 
       - name: Corrigir e Rodar Script Patch
         run: |
-          # Neutraliza interrupções e limpezas automáticas
+          # Neutraliza interrupções do script
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Execução do patch concluída com avisos."
+          ./patch.sh || echo "Patch finalizado com avisos."
 
-      - name: Limpeza Crítica e Mudança de ID (Fix Instalação)
+      - name: Limpeza de Emergência e Troca de ID
         run: |
-          # 1. Muda o ID do pacote para evitar conflito de instalação ("App não instalado")
-          # Isso permite instalar este APK sem precisar remover o original.
+          # 1. Muda o Package Name para evitar erro de instalação no celular
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           
-          # 2. Remove arquivos de lixo gerados por patches que falharam
+          # 2. Remove arquivos residuais de patches que falharam
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
           
-          # 3. Limpeza de referências de recursos
-          rm -f work/decompiled/res/values/public.xml
+          # 3. Limpeza de metadados do Apktool que causam conflito
           rm -rf work/decompiled/unknown
-          sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
+          rm -f work/decompiled/res/values/public.xml
           
-          # 4. Remove layouts XML que estão corrompidos ou com referências nulas
-          # Estes arquivos causaram os erros anteriores de build
+          # 4. Remove arquivos XML corrompidos que impedem o build
           rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
           rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
           rm -f work/decompiled/res/xml/locales_config.xml
+          
+          # 5. Limpa o cache do framework do Apktool (essencial para evitar o erro de No such file)
+          rm -rf ~/.local/share/apktool/framework/1.apk
 
-      - name: Rebuild Manual
+      - name: Rebuild Forçado
         run: |
           mkdir -p output
-          echo "Iniciando compilação final com aapt2..."
-          # Força o rebuild ignorando erros menores de recursos
+          echo "Tentando Rebuild com AAPT2 e limpeza de recursos..."
+          # O comando 'empty-res' ajuda se houver recursos faltando
           apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
-      - name: Assinatura do APK
+      - name: Assinar e Finalizar
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            echo "Gerando chave de assinatura..."
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            echo "Gerando nova keystore..."
+            keytool -genkey -v -keystore final.keystore -storepass android -alias androidkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=GameHub Lite,O=Community,C=BR"
             
-            echo "Assinando arquivo final..."
-            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
-            echo "APK assinado com sucesso!"
+            echo "Assinando..."
+            apksigner sign --ks final.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
           else
-            echo "ERRO: O arquivo unsigned.apk não foi criado pelo apktool."
+            echo "ERRO: O arquivo unsigned.apk ainda não foi gerado. Verifique os logs do 'Rebuild Forçado'."
             exit 1
           fi
 
-      - name: Upload do Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
