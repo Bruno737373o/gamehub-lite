@@ -33,61 +33,66 @@ jobs:
 
       - name: Rodar Script Patch
         run: |
-          # Força o script a não deletar a pasta de trabalho ao terminar
+          # Garante que a pasta work existe antes de rodar o patch
+          mkdir -p work
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
+          # Impede que o script apague a pasta ao final
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Patch finalizado."
+          ./patch.sh || echo "Patch concluído."
 
       - name: Correção de Recursos e Sintaxe
         run: |
-          # Detecta automaticamente onde o APK foi extraído (geralmente work/decompiled)
-          DECOMP_DIR=$(find . -name "AndroidManifest.xml" | head -n 1 | xargs dirname)
-          echo "Diretório de trabalho detectado: $DECOMP_DIR"
+          # Busca o diretório que contém o apktool.yml dentro de work/
+          # Isso ignora as pastas de patches/ que causaram o erro anterior
+          DECOMP_DIR=$(find ./work -name "apktool.yml" | head -n 1 | xargs dirname)
+          
+          echo "Diretório de trabalho REAL detectado: $DECOMP_DIR"
           
           if [ -n "$DECOMP_DIR" ]; then
-            # 1. Cria placeholders para evitar erro 'resource not found'
+            # 1. Cria placeholders para ícones ausentes
             mkdir -p "$DECOMP_DIR/res/drawable"
             SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
             echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_guide_close_gry.xml"
             echo "$SHAPE" > "$DECOMP_DIR/res/drawable/llanuncher_icon_guide_gamepad.xml"
             
-            # 2. Limpeza de arquivos corrompidos e metadados
+            # 2. Deleta layouts que costumam corromper no patch
             rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_email_validate.xml"
             rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_phone_validate.xml"
             rm -f "$DECOMP_DIR/res/layout/llauncher_activity_guide_no_connected_dev.xml"
             
-            # 3. Ajuste de Identidade e YAML
+            # 3. Ajuste de Identidade e limpeza de YAML
             sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$DECOMP_DIR/AndroidManifest.xml"
             sed -i '/unknownFiles:/,$d' "$DECOMP_DIR/apktool.yml"
             
-            # 4. Limpeza de sobras
+            # 4. Limpeza de arquivos residuais
             rm -rf "$DECOMP_DIR/unknown"
             rm -f "$DECOMP_DIR/res/values/public.xml"
             find "$DECOMP_DIR" -name "*.rej" -delete
             find "$DECOMP_DIR" -name "*.orig" -delete
             
-            # Exporta o caminho para o próximo passo
             echo "FINAL_DIR=$DECOMP_DIR" >> $GITHUB_ENV
           else
-            echo "Erro: Não foi possível localizar a pasta de descompilação."
+            echo "ERRO: Não encontrei a pasta de descompilação em ./work"
+            ls -R ./work
             exit 1
           fi
 
       - name: Rebuild e Assinatura
         run: |
           mkdir -p output
+          # Limpa framework para evitar erros de recursos de sistema
           rm -rf ~/.local/share/apktool/framework/1.apk
           
-          # Rebuild usando a variável detectada
           apktool b -f "${{ env.FINAL_DIR }}" -o output/GameHub-Lite-Unsigned.apk --use-aapt2
           
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+            echo "Build finalizado com sucesso!"
           else
-            echo "Falha no Rebuild."
+            echo "Falha no Rebuild: O APK não foi gerado."
             exit 1
           fi
 
@@ -96,4 +101,3 @@ jobs:
         with:
           name: GameHub-Lite-Final
           path: output/GameHub-Lite.apk
-          
