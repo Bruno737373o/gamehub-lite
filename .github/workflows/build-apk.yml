@@ -28,29 +28,29 @@ jobs:
       - name: Baixar APK Original
         run: |
           mkdir -p apk
-          # Usando o comando curl que extrai o link do MediaFire (mesmo do passo anterior)
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
-      - name: Corrigir Script e Rodar Patch
+      - name: Modificar e Executar Patch
         run: |
-          # 1. Remove o 'read' interativo que trava o GitHub Actions
+          # 1. Desativar o cleanup para podermos ver o que sobrou se falhar
+          sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
+          # 2. Desativar o 'read' interativo
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           
-          # 2. Garante que os arquivos de patch existam para não dar erro no 'wc'
-          mkdir -p patches/diffs
-          touch patches/files_to_delete.txt patches/files_to_patch.txt
-          
-          # 3. Executa o patch ignorando erros de deleção
           chmod +x patch.sh
-          export _JAVA_OPTIONS="-Xmx2g"
+          export _JAVA_OPTIONS="-Xmx4g" # Aumentado para 4GB para o rebuild
           
-          # Usamos 'yes y |' para responder automaticamente qualquer pergunta do script
-          yes y | ./patch.sh || echo "Patch finalizado com avisos"
+          # Executa e mostra o log completo se der erro
+          ./patch.sh || (echo "ERRO DETECTADO NO SCRIPT"; exit 1)
 
-      - name: Upload do APK
+      - name: Upload do APK (Se gerado)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
-          path: output/GameHub-Lite.apk
-          
+          # O caminho pode variar se o script falhou no meio, vamos tentar pegar qualquer apk na pasta output
+          path: |
+            output/*.apk
+            work/*.apk
+            
