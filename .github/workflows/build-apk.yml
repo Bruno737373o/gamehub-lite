@@ -39,38 +39,41 @@ jobs:
           chmod +x patch.sh
           ./patch.sh || echo "Patch concluído."
 
-      - name: Limpeza Extrema (Fix FileNotFound)
+      - name: Limpeza Radical de Recursos (Fix Build)
         run: |
-          # 1. Muda o ID do pacote para evitar erro de "App não instalado"
+          # 1. Ajusta o ID do pacote para evitar erro de "App não instalado"
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           
-          # 2. LIMPEZA DO YAML (O segredo para o erro DebugProbesKt.bin)
-          # Remove tudo que estiver abaixo de 'unknownFiles:' no arquivo de configuração
-          sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
+          # 2. Deleta os layouts que estão causando erro de "resource not found"
+          # Esses arquivos tentam usar drawables que foram removidos
+          rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
+          rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
           
-          # 3. Remove pastas e arquivos que causam conflito
+          # 3. Limpeza do YAML e referências
+          sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
           rm -rf work/decompiled/unknown
           rm -f work/decompiled/res/values/public.xml
           rm -f work/decompiled/res/xml/locales_config.xml
+          
+          # 4. Remove arquivos residuais de patch
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
-          
-          # 4. Limpa o cache do Apktool
-          rm -rf ~/.local/share/apktool/framework/1.apk
 
-      - name: Rebuild Manual
+      - name: Rebuild Manual Final
         run: |
           mkdir -p output
-          # Tenta o rebuild com aapt2. Se falhar, tenta sem.
+          echo "Iniciando compilação com aapt2..."
+          # Tenta buildar. Se falhar um, tenta o outro.
           apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
-      - name: Assinar APK
+      - name: Assinar e Concluir
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
+            echo "Gerando chave e assinando..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
           else
-            echo "Falha crítica: APK não gerado."
+            echo "ERRO: O APK não foi gerado pelo apktool."
             exit 1
           fi
 
