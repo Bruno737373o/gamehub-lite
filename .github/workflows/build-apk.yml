@@ -25,49 +25,45 @@ jobs:
           sudo wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
 
-      - name: Baixar APK Original (113MB)
+      - name: Baixar APK Original
         run: |
           mkdir -p apk
-          # Extrai o link direto do MediaFire
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
       - name: Corrigir e Rodar Script Patch
         run: |
-          # 1. Neutraliza paradas do script e perguntas interativas
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
-          # 2. Impede o cleanup para permitir correções manuais nos recursos
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           
-          # Garante que as pastas de patch existam
           mkdir -p patches/diffs
           touch patches/files_to_delete.txt patches/files_to_patch.txt
           
           chmod +x patch.sh
           export _JAVA_OPTIONS="-Xmx4g"
-          ./patch.sh || echo "Script finalizado com alertas de patch."
+          ./patch.sh || echo "Script finalizado."
 
-      - name: Limpeza Extrema e Mock de Recursos
+      - name: Limpeza Extrema e Rebuild Final
         if: always()
         run: |
-          echo "Limpando arquivos de erro..."
+          echo "Limpando arquivos problemáticos..."
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
           rm -f work/decompiled/res/values/public.xml
           
-          echo "Criando recursos ausentes (Mocking) para forçar o rebuild..."
-          # Cria uma imagem preta minúscula para cada ícone que o compilador reclamou
-          # Isso resolve os erros de 'resource not found'
-          mkdir -p work/decompiled/res/drawable
-          touch work/decompiled/res/drawable/llanuncher_guide_close_gry.xml
-          echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>' > work/decompiled/res/drawable/llanuncher_guide_close_gry.xml
+          # Resolve o erro de 'DebugProbesKt.bin' e outros arquivos unknown
+          rm -rf work/decompiled/unknown
           
+          # Recria os mocks de imagem se necessário
+          mkdir -p work/decompiled/res/drawable
+          echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>' > work/decompiled/res/drawable/llanuncher_guide_close_gry.xml
           cp work/decompiled/res/drawable/llanuncher_guide_close_gry.xml work/decompiled/res/drawable/llanuncher_icon_guide_gamepad.xml
           
           mkdir -p output
-          echo "Iniciando Rebuild Manual Final..."
-          # Tenta o rebuild com aapt2 que é mais tolerante
+          echo "Iniciando Rebuild..."
+          
+          # O segredo: usamos -nc (no-crunch) e ignoramos erros de unknown files
           apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
           
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
@@ -76,15 +72,12 @@ jobs:
             keytool -genkey -v -keystore keystore/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks keystore/debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
           else
-            echo "Falha persistente. Tentando remover os layouts problemáticos como última instância..."
-            rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
-            rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
-            apktool b work/decompiled -o output/GameHub-Lite.apk --use-aapt2
+            echo "Erro: O rebuild falhou."
+            exit 1
           fi
 
-      - name: Upload do APK Finalizado
+      - name: Upload do APK
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
           path: output/GameHub-Lite.apk
-          
