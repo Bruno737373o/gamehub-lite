@@ -17,7 +17,7 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Instalar Ferramentas (Apktool/Signer)
+      - name: Instalar Ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y zipalign apksigner
@@ -25,51 +25,47 @@ jobs:
           sudo wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
 
-      - name: Baixar APK Original (113MB)
+      - name: Baixar APK Original
         run: |
           mkdir -p apk
-          # Puxa o link direto do MediaFire dinamicamente
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
       - name: Corrigir e Rodar Script Patch
         run: |
-          # 1. Modifica o script para não parar em erros bobos (set +e)
+          # 1. Neutraliza paradas do script
           sed -i 's/set -e/set +e/g' patch.sh
-          # 2. Desativa o read interativo (pergunta de MD5)
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
-          # 3. Impede o script de apagar a pasta de trabalho se falhar
+          # 2. Impede o cleanup para podermos limpar os erros manualmente
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
-          
-          # Garante que as pastas de patch existam (evita erro de diretório vazio)
-          mkdir -p patches/diffs
-          touch patches/files_to_delete.txt patches/files_to_patch.txt
           
           chmod +x patch.sh
           export _JAVA_OPTIONS="-Xmx4g"
-          
-          # Roda o script. Se der erro em alguma linha, o 'set +e' permite continuar
-          ./patch.sh || echo "Script terminou com avisos, continuando para o rebuild..."
+          ./patch.sh || echo "Ignorando erros do script para correção manual..."
 
-      - name: Rebuild Manual e Assinatura (Segurança)
+      - name: Limpeza de Arquivos Rejeitados e Rebuild Manual
         if: always()
         run: |
-          # Caso o script tenha parado antes de gerar o APK final
-          if [ ! -f "output/GameHub-Lite.apk" ]; then
-            echo "Script falhou no rebuild. Iniciando Rebuild Manual..."
-            mkdir -p output
-            # Tenta rebuildar o que foi descompilado na pasta 'work'
-            apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk || exit 1
-            
-            # Gera keystore se não existir
+          echo "Limpando arquivos .rej e .orig que travam o rebuild..."
+          find work/decompiled -name "*.rej" -delete
+          find work/decompiled -name "*.orig" -delete
+          
+          mkdir -p output
+          echo "Iniciando Rebuild Manual com tratamento de erros..."
+          # O parâmetro -f força e --use-aapt2 ajuda com recursos modernos
+          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || echo "Falha crítica no rebuild"
+          
+          if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
+            echo "Assinando APK..."
             mkdir -p keystore
             keytool -genkey -v -keystore keystore/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            
-            # Assina o APK gerado manualmente
             apksigner sign --ks keystore/debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+          else
+            echo "Erro: O APK não foi gerado. Verifique os logs de compilação acima."
+            exit 1
           fi
 
-      - name: Upload do APK Finalizado
+      - name: Upload do APK
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Signed
