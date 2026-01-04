@@ -36,52 +36,42 @@ jobs:
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
-          
-          mkdir -p patches/diffs
-          touch patches/files_to_delete.txt patches/files_to_patch.txt
-          
           chmod +x patch.sh
-          export _JAVA_OPTIONS="-Xmx4g"
-          ./patch.sh || echo "Script finalizado."
+          ./patch.sh || echo "Patch aplicado."
 
-      - name: Limpeza e Rebuild Final
-        if: always()
+      - name: Ajuste de Identidade e Limpeza (Fix Instalação)
         run: |
-          echo "Limpando arquivos problemáticos e corrigindo apktool.yml..."
+          # 1. Muda o ID do app para evitar conflito com o original
+          sed -i 's/package="com.xiaoji.egggame"/package="com.gamehub.lite"/g' work/decompiled/AndroidManifest.xml
+          
+          # 2. Limpeza profunda de erros conhecidos
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
           rm -f work/decompiled/res/values/public.xml
           rm -rf work/decompiled/unknown
-          
-          # Limpa a seção de arquivos desconhecidos do YAML
           sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
-          echo "doNotCheck: true" >> work/decompiled/apktool.yml
           
-          # Mocks de recursos
-          mkdir -p work/decompiled/res/drawable
-          echo '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>' > work/decompiled/res/drawable/llanuncher_guide_close_gry.xml
-          cp work/decompiled/res/drawable/llanuncher_guide_close_gry.xml work/decompiled/res/drawable/llanuncher_icon_guide_gamepad.xml
-          
-          mkdir -p output
-          echo "Iniciando Rebuild..."
-          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
-          
-      - name: Assinar APK (Passo Independente)
-        if: always()
+          # 3. Remove os layouts que pedem ícones deletados (Causa do erro de build)
+          rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
+          rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
+
+      - name: Rebuild e Assinatura
         run: |
+          mkdir -p output
+          # Rebuild usando o aapt2 que é mais tolerante a erros de XML
+          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2
+          
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            echo "Assinando APK..."
-            mkdir -p keystore
-            # Só gera a chave se ela não existir
-            if [ ! -f "keystore/debug.keystore" ]; then
-              keytool -genkey -v -keystore keystore/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            fi
-            # Tenta assinar com a chave do workflow ou a chave do script
-            apksigner sign --ks keystore/debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk || \
-            apksigner sign --ks keystore/debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+            # Gera keystore limpa
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            # Assina
+            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+          else
+            echo "Erro: O apktool não conseguiu criar o arquivo unsigned.apk"
+            exit 1
           fi
 
-      - name: Upload do APK Finalizado
+      - name: Upload do APK
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
