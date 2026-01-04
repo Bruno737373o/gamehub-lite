@@ -31,75 +31,59 @@ jobs:
           DOWNLOAD_URL=$(curl -s "https://www.mediafire.com/file/7dvsg0xiw4pawnk/gamehub-5-1-0.apk/file" | grep -o 'https://download[^"]*' | head -n 1)
           wget -O apk/GameHub-5.1.0.apk "$DOWNLOAD_URL"
 
-      - name: Rodar Script Patch (Sem Rebuild Interno)
+      - name: Descompilação Manual
         run: |
-          # Desativa builds automáticos do patch.sh que falham por causa de lixo (.rej)
-          sed -i 's/apktool b/# apktool b/g' patch.sh
-          sed -i 's/apksigner/# apksigner/g' patch.sh
-          sed -i 's/zipalign/# zipalign/g' patch.sh
-          sed -i 's/set -e/set +e/g' patch.sh
-          sed -i 's/read -pr/echo "Y" #/g' patch.sh
-          sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
-          
-          chmod +x patch.sh
-          ./patch.sh || echo "Patches finalizados."
+          echo "Descompilando APK original..."
+          apktool d apk/GameHub-5.1.0.apk -o work/decompiled
 
-      - name: Localização Dinâmica e Limpeza Crítica
+      - name: Aplicar Patches e Limpeza
         run: |
-          echo "Buscando diretório descompilado..."
-          # Encontra o AndroidManifest.xml real (filtrando cópias de backup)
-          MANIFEST_FILE=$(find . -type f -name "AndroidManifest.xml" | grep -E "work|decompiled" | head -n 1)
+          TARGET="work/decompiled"
           
-          if [ -z "$MANIFEST_FILE" ]; then
-            echo "ERRO: Pasta de trabalho não encontrada. Listando arquivos para debug:"
-            find . -maxdepth 3
-            exit 1
+          # 1. Aplicar patches de texto (se existirem na pasta patches/diffs)
+          if [ -d "patches/diffs" ]; then
+            echo "Aplicando patches encontrados..."
+            find patches/diffs -name "*.patch" | while read patch_file; do
+              # Tenta descobrir qual arquivo o patch quer alterar
+              target_file=$(basename "$patch_file" .patch)
+              find "$TARGET" -name "$target_file" -exec patch -f {} "$patch_file" \; || echo "Aviso: Falha ao aplicar $patch_file"
+            done
           fi
-          
-          REAL_PATH=$(dirname "$MANIFEST_FILE")
-          echo "Pasta detectada: $REAL_PATH"
-          echo "TARGET_DIR=$REAL_PATH" >> $GITHUB_ENV
 
-          # 1. Remove arquivos de rejeição de patch (.rej e .orig) que travam o AAPT
-          find "$REAL_PATH" -name "*.rej" -delete
-          find "$REAL_PATH" -name "*.orig" -delete
-          
-          # 2. Remove arquivos de configuração de recursos problemáticos
-          rm -f "$REAL_PATH/res/values/public.xml"
-          rm -f "$REAL_PATH/res/xml/locales_config.xml"
-          
-          # 3. Cria placeholders para ícones ausentes (conforme log de erro anterior)
-          mkdir -p "$REAL_PATH/res/drawable"
+          # 2. Criar Placeholders para os ícones que costumam faltar no GameHub
+          mkdir -p "$TARGET/res/drawable"
           SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
-          echo "$SHAPE" > "$REAL_PATH/res/drawable/llanuncher_guide_close_gry.xml"
-          echo "$SHAPE" > "$REAL_PATH/res/drawable/llanuncher_icon_guide_gamepad.xml"
-          
-          # 4. Ajuste de ID do Pacote e limpeza de YAML
-          sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$REAL_PATH/AndroidManifest.xml"
-          sed -i '/unknownFiles:/,$d' "$REAL_PATH/apktool.yml"
+          echo "$SHAPE" > "$TARGET/res/drawable/llanuncher_guide_close_gry.xml"
+          echo "$SHAPE" > "$TARGET/res/drawable/llanuncher_icon_guide_gamepad.xml"
 
-      - name: Rebuild Manual Blindado
+          # 3. Limpeza de rejeições e arquivos temporários
+          find "$TARGET" -name "*.rej" -delete
+          find "$TARGET" -name "*.orig" -delete
+          
+          # 4. Troca de Identidade para evitar conflito
+          sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$TARGET/AndroidManifest.xml"
+          
+          # 5. Remover public.xml (forçar re-geração de IDs)
+          rm -f "$TARGET/res/values/public.xml"
+
+      - name: Rebuild Manual AAPT2
         run: |
           mkdir -p output
-          # Limpa framework do usuário para evitar IDs órfãos
           rm -rf ~/.local/share/apktool/framework/1.apk
-          
-          echo "Iniciando compilação manual com AAPT2..."
-          # Força o uso do aapt2 e ignora erros não fatais de recursos
-          apktool b -f "${{ env.TARGET_DIR }}" -o output/unsigned.apk --use-aapt2
+          apktool b work/decompiled -o output/unsigned.apk --use-aapt2
 
-      - name: Assinar e Concluir
+      - name: Assinar APK
         run: |
           if [ -f "output/unsigned.apk" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/unsigned.apk
-            echo "Sucesso total!"
+            echo "Sucesso!"
           else
-            echo "Erro crítico: O rebuild manual falhou. Verifique as mensagens de 'Building resources' acima."
+            echo "Erro no build."
             exit 1
           fi
 
-      - name: Upload Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
