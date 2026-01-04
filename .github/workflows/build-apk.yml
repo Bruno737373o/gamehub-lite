@@ -33,51 +33,44 @@ jobs:
 
       - name: Corrigir e Rodar Script Patch
         run: |
-          # Neutraliza interrupções do script
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Patch finalizado com avisos."
+          ./patch.sh || echo "Patch concluído."
 
-      - name: Limpeza de Emergência e Troca de ID
+      - name: Limpeza Extrema (Fix FileNotFound)
         run: |
-          # 1. Muda o Package Name para evitar erro de instalação no celular
+          # 1. Muda o ID do pacote para evitar erro de "App não instalado"
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           
-          # 2. Remove arquivos residuais de patches que falharam
+          # 2. LIMPEZA DO YAML (O segredo para o erro DebugProbesKt.bin)
+          # Remove tudo que estiver abaixo de 'unknownFiles:' no arquivo de configuração
+          sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
+          
+          # 3. Remove pastas e arquivos que causam conflito
+          rm -rf work/decompiled/unknown
+          rm -f work/decompiled/res/values/public.xml
+          rm -f work/decompiled/res/xml/locales_config.xml
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
           
-          # 3. Limpeza de metadados do Apktool que causam conflito
-          rm -rf work/decompiled/unknown
-          rm -f work/decompiled/res/values/public.xml
-          
-          # 4. Remove arquivos XML corrompidos que impedem o build
-          rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
-          rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
-          rm -f work/decompiled/res/xml/locales_config.xml
-          
-          # 5. Limpa o cache do framework do Apktool (essencial para evitar o erro de No such file)
+          # 4. Limpa o cache do Apktool
           rm -rf ~/.local/share/apktool/framework/1.apk
 
-      - name: Rebuild Forçado
+      - name: Rebuild Manual
         run: |
           mkdir -p output
-          echo "Tentando Rebuild com AAPT2 e limpeza de recursos..."
-          # O comando 'empty-res' ajuda se houver recursos faltando
+          # Tenta o rebuild com aapt2. Se falhar, tenta sem.
           apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
 
-      - name: Assinar e Finalizar
+      - name: Assinar APK
         run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            echo "Gerando nova keystore..."
-            keytool -genkey -v -keystore final.keystore -storepass android -alias androidkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=GameHub Lite,O=Community,C=BR"
-            
-            echo "Assinando..."
-            apksigner sign --ks final.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
           else
-            echo "ERRO: O arquivo unsigned.apk ainda não foi gerado. Verifique os logs do 'Rebuild Forçado'."
+            echo "Falha crítica: APK não gerado."
             exit 1
           fi
 
