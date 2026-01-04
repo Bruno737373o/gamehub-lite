@@ -33,57 +33,63 @@ jobs:
 
       - name: Descompilação Manual
         run: |
-          echo "Descompilando APK original..."
           apktool d apk/GameHub-5.1.0.apk -o work/decompiled
 
-      - name: Aplicar Patches e Limpeza
+      - name: Aplicar Patches, Limpeza e Otimização
         run: |
           TARGET="work/decompiled"
           
-          # 1. Aplicar patches de texto (se existirem na pasta patches/diffs)
-          if [ -d "patches/diffs" ]; then
-            echo "Aplicando patches encontrados..."
-            find patches/diffs -name "*.patch" | while read patch_file; do
-              # Tenta descobrir qual arquivo o patch quer alterar
-              target_file=$(basename "$patch_file" .patch)
-              find "$TARGET" -name "$target_file" -exec patch -f {} "$patch_file" \; || echo "Aviso: Falha ao aplicar $patch_file"
-            done
-          fi
-
-          # 2. Criar Placeholders para os ícones que costumam faltar no GameHub
+          # 1. Placeholders de Imagem (Corrige erro: resource drawable not found)
           mkdir -p "$TARGET/res/drawable"
           SHAPE='<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><size android:width="1dp" android:height="1dp" /></shape>'
           echo "$SHAPE" > "$TARGET/res/drawable/llanuncher_guide_close_gry.xml"
           echo "$SHAPE" > "$TARGET/res/drawable/llanuncher_icon_guide_gamepad.xml"
+          echo "$SHAPE" > "$TARGET/res/drawable/emuready_logo.xml"
 
-          # 3. Limpeza de rejeições e arquivos temporários
+          # 2. Placeholder de Estilos (Corrige erro: resource style/CloudProgressStyle not found)
+          # Injeta o estilo ausente no styles.xml antes da tag de fecho
+          STYLE_FILE="$TARGET/res/values/styles.xml"
+          if [ -f "$STYLE_FILE" ]; then
+            sed -i '/<\/resources>/i \    <style name="CloudProgressStyle" parent="" />' "$STYLE_FILE"
+          fi
+
+          # 3. Otimização Lite (Remove telemetria e arquitecturas extras)
+          # Mantém apenas arm64-v8a para reduzir o tamanho do APK
+          rm -rf "$TARGET/lib/x86" "$TARGET/lib/x86_64" "$TARGET/lib/armeabi-v7a"
+          find "$TARGET/lib" -name "*bugly*" -delete
+          find "$TARGET/lib" -name "*umeng*" -delete
+
+          # 4. Limpeza de sobras de patch e Identidade
           find "$TARGET" -name "*.rej" -delete
           find "$TARGET" -name "*.orig" -delete
-          
-          # 4. Troca de Identidade para evitar conflito
           sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' "$TARGET/AndroidManifest.xml"
-          
-          # 5. Remover public.xml (forçar re-geração de IDs)
           rm -f "$TARGET/res/values/public.xml"
 
-      - name: Rebuild Manual AAPT2
+      - name: Rebuild Manual com AAPT2
         run: |
           mkdir -p output
           rm -rf ~/.local/share/apktool/framework/1.apk
-          apktool b work/decompiled -o output/unsigned.apk --use-aapt2
+          apktool b work/decompiled -o output/unsigned_raw.apk --use-aapt2
 
-      - name: Assinar APK
+      - name: Zipalign (Otimização de Memória)
         run: |
-          if [ -f "output/unsigned.apk" ]; then
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/unsigned.apk
-            echo "Sucesso!"
+          if [ -f "output/unsigned_raw.apk" ]; then
+            zipalign -v 4 output/unsigned_raw.apk output/unsigned_aligned.apk
           else
-            echo "Erro no build."
+            echo "Erro: Rebuild falhou."
             exit 1
           fi
 
-      - name: Upload
+      - name: Assinar APK Final
+        run: |
+          # Gerar chave de assinatura temporária
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          
+          # Assinar o APK optimizado
+          apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/unsigned_aligned.apk
+          echo "APK assinado e pronto!"
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
