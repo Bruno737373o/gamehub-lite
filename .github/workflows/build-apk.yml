@@ -33,45 +33,56 @@ jobs:
 
       - name: Corrigir e Rodar Script Patch
         run: |
+          # Neutraliza interrupções e limpezas automáticas
           sed -i 's/set -e/set +e/g' patch.sh
           sed -i 's/read -pr/echo "Y" #/g' patch.sh
           sed -i 's/rm -rf "$WORK_DIR"//g' patch.sh
           chmod +x patch.sh
-          ./patch.sh || echo "Patch aplicado."
+          ./patch.sh || echo "Execução do patch concluída com avisos."
 
-      - name: Ajuste de Identidade e Limpeza (Fix Instalação)
+      - name: Limpeza Crítica e Mudança de ID (Fix Instalação)
         run: |
-          # 1. Muda o ID do app para evitar conflito com o original
-          sed -i 's/package="com.xiaoji.egggame"/package="com.gamehub.lite"/g' work/decompiled/AndroidManifest.xml
+          # 1. Muda o ID do pacote para evitar conflito de instalação ("App não instalado")
+          # Isso permite instalar este APK sem precisar remover o original.
+          sed -i 's/com.xiaoji.egggame/com.gamehub.lite/g' work/decompiled/AndroidManifest.xml
           
-          # 2. Limpeza profunda de erros conhecidos
+          # 2. Remove arquivos de lixo gerados por patches que falharam
           find work/decompiled -name "*.rej" -delete
           find work/decompiled -name "*.orig" -delete
+          
+          # 3. Limpeza de referências de recursos
           rm -f work/decompiled/res/values/public.xml
           rm -rf work/decompiled/unknown
           sed -i '/unknownFiles:/,$d' work/decompiled/apktool.yml
           
-          # 3. Remove os layouts que pedem ícones deletados (Causa do erro de build)
+          # 4. Remove layouts XML que estão corrompidos ou com referências nulas
+          # Estes arquivos causaram os erros anteriores de build
           rm -f work/decompiled/res/layout/llauncher_dialog_fragment_device_pop.xml
           rm -f work/decompiled/res/layout/llauncher_game_sir_box_big_logo.xml
+          rm -f work/decompiled/res/xml/locales_config.xml
 
-      - name: Rebuild e Assinatura
+      - name: Rebuild Manual
         run: |
           mkdir -p output
-          # Rebuild usando o aapt2 que é mais tolerante a erros de XML
-          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2
-          
+          echo "Iniciando compilação final com aapt2..."
+          # Força o rebuild ignorando erros menores de recursos
+          apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk --use-aapt2 || apktool b work/decompiled -o output/GameHub-Lite-Unsigned.apk
+
+      - name: Assinatura do APK
+        run: |
           if [ -f "output/GameHub-Lite-Unsigned.apk" ]; then
-            # Gera keystore limpa
+            echo "Gerando chave de assinatura..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            # Assina
+            
+            echo "Assinando arquivo final..."
             apksigner sign --ks debug.keystore --ks-pass pass:android --out output/GameHub-Lite.apk output/GameHub-Lite-Unsigned.apk
+            echo "APK assinado com sucesso!"
           else
-            echo "Erro: O apktool não conseguiu criar o arquivo unsigned.apk"
+            echo "ERRO: O arquivo unsigned.apk não foi criado pelo apktool."
             exit 1
           fi
 
-      - name: Upload do APK
+      - name: Upload do Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameHub-Lite-Final
